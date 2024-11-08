@@ -2,12 +2,19 @@ const express = require("express");
 const app = express();
 const cors = require("cors");
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 5070;
 
 // middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: ["http://localhost:5173", "http://localhost:5173"],
+    credentials: true,
+    optionsSuccessStatus: 200,
+  })
+);
 app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.bsdzgwr.mongodb.net/?appName=Cluster0`;
@@ -27,6 +34,22 @@ async function run() {
     await client.connect();
 
     const userCollection = client.db("creativeDB").collection("users");
+    const contestCollection = client.db("creativeDB").collection("Contest");
+
+    // jwt related api
+
+    // create token
+    app.post("/jwt", async (req, res) => {
+      try {
+        const user = req.body;
+        const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+          expireIn: "1h",
+        });
+        res.send({ token });
+      } catch (error) {
+        console.log(error.message);
+      }
+    });
 
     // user related API
 
@@ -53,6 +76,41 @@ async function run() {
         const result = await userCollection.find().toArray();
         res.send(result);
         console.log("from database user", result);
+      } catch (error) {
+        console.log(error.message);
+      }
+    });
+
+    // get all Contest data
+    app.get("/all-contest", async (req, res) => {
+      try {
+        const result = await contestCollection.find().toArray();
+        res.send(result);
+      } catch (error) {
+        console.log(error.message);
+      }
+    });
+
+    // get a single contest data
+    app.get("/contest/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await contestCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        res.send(result);
+      } catch (error) {
+        console.log(error.massage);
+      }
+    });
+
+    // save Contest data
+
+    app.post("/add-contest", async (req, res) => {
+      try {
+        const contestData = req.body;
+        const result = await contestCollection.insertOne(contestData);
+        res.send(result);
       } catch (error) {
         console.log(error.message);
       }
