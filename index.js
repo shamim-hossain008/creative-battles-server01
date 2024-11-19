@@ -133,6 +133,19 @@ async function run() {
       }
     });
 
+    // Delete Contest from data server
+    app.delete("/my-created-contest/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await contestCollection.deleteOne(query);
+        res.send(result);
+      } catch (error) {
+        console.log(error.message);
+        res.status(500).send({ message: "Failed to fetch contest delete" });
+      }
+    });
+
     // save Contest data
 
     app.post("/add-contest", async (req, res) => {
