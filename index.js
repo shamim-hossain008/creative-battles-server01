@@ -91,6 +91,20 @@ async function run() {
       }
     });
 
+    // get popular contest data
+    app.get("/popular-contest", async (req, res) => {
+      try {
+        const result = await contestCollection
+          .find({})
+          .sort({ participationCount: -1 })
+          .limit(5)
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        console.log(error.massager);
+      }
+    });
+
     // get a single contest data
     app.get("/contest/:id", async (req, res) => {
       try {
@@ -98,9 +112,24 @@ async function run() {
         const result = await contestCollection.findOne({
           _id: new ObjectId(id),
         });
+
         res.send(result);
       } catch (error) {
         console.log(error.massage);
+        res.status(500).send({ message: "Failed to fetch contest id" });
+      }
+    });
+
+    // get contest data by email
+    app.get("/my-created-contest/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+        let query = { "creator.email": email };
+        const result = await contestCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.log(error.message);
+        res.status(500).send({ message: "Failed to fetch contest list email" });
       }
     });
 
@@ -109,6 +138,7 @@ async function run() {
     app.post("/add-contest", async (req, res) => {
       try {
         const contestData = req.body;
+
         const result = await contestCollection.insertOne(contestData);
         res.send(result);
       } catch (error) {
