@@ -4,7 +4,12 @@ const cors = require("cors");
 require("dotenv").config();
 const jwt = require("jsonwebtoken");
 
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const {
+  MongoClient,
+  ServerApiVersion,
+  ObjectId,
+  MongoUnexpectedServerResponseError,
+} = require("mongodb");
 const port = process.env.PORT || 5070;
 
 // middleware
@@ -34,6 +39,7 @@ async function run() {
     await client.connect();
 
     const userCollection = client.db("creativeDB").collection("users");
+    // const userCollection = client.db("creativeDB").collection("user");
     const contestCollection = client.db("creativeDB").collection("Contest");
 
     // jwt related api
@@ -42,9 +48,7 @@ async function run() {
     app.post("/jwt", async (req, res) => {
       try {
         const user = req.body;
-        const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-          expireIn: "1h",
-        });
+        const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {});
         res.send({ token });
       } catch (error) {
         console.log(error.message);
@@ -70,12 +74,50 @@ async function run() {
       }
     });
 
-    //  get users data
+    //
+    app.put("/user", async (req, res) => {
+      try {
+        const user = req.body;
+        const query = { email: user?.email };
+        // check if user already exists in data server
+        const isExist = await userCollection.findOne(query);
+        if (isExist) {
+          if (user.status === "Requested") {
+            const result = await userCollection.updateOne(query, {
+              $set: { status: user?.status },
+            });
+            return res.send(result);
+          } else {
+            return res.send(isExist);
+          }
+        }
+
+        // save user for the first time
+        const options = { upsert: true };
+
+        const updateDoc = {
+          $set: {
+            ...user,
+            timestamp: Date.now(),
+          },
+        };
+
+        const result = await userCollection.updateOne(
+          query,
+          updateDoc,
+          options
+        );
+        res.send(result);
+      } catch (error) {
+        console.log(error.message);
+      }
+    });
+
+    //  get all users data
     app.get("/users", async (req, res) => {
       try {
         const result = await userCollection.find().toArray();
         res.send(result);
-        console.log("from database user", result);
       } catch (error) {
         console.log(error.message);
       }
