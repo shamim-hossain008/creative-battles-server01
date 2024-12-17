@@ -37,7 +37,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const userCollection = client.db("creativeDB").collection("users");
     const contestCollection = client.db("creativeDB").collection("Contest");
@@ -78,16 +78,35 @@ async function run() {
       });
     };
 
-    // admin verify related api
-    const verifyAdmin = async (req, res, next) => {
-      console.log("hello..........");
-      const user = req.user;
-      const query = { email: user?.email };
-      const result = await userCollection.findOne(query);
-      if (!result || result?.role !== "admin") {
-        return res.status(401).send({ message: "unauthorized access!!" });
-      }
+    // // admin verify related api
+    // const verifyAdmin = async (req, res, next) => {
+    //   console.log("hello..........", req);
+    //   const user = req.params.email;
+    //   console.log(user);
+    //   // const query = { email: user?.email };
+    //   // console.log("admin query", query);
+    //   const result = await userCollection.findOne({ email: user });
+    //   console.log("admin result:", result);
+    //   if (!result || result?.role !== "admin") {
+    //     return res.status(401).send({ message: "unauthorized access!!" });
+    //   }
 
+    //   next();
+    // };
+    const verifyAdmin = async (req, res, next) => {
+      try {
+        const email = req.decoded.email;
+        // console.log("user email:", email);
+        const query = { email: email };
+        const user = await userCollection.findOne(query);
+        console.log(user);
+        const isAdmin = user?.role === "admin";
+        if (!isAdmin) {
+          return res.status(403).send({ message: "forbidden access" });
+        }
+      } catch (error) {
+        console.error(error.message);
+      }
       next();
     };
 
@@ -104,45 +123,24 @@ async function run() {
 
     // user related API
 
-    // save users data
-    app.post("/users", async (req, res) => {
-      try {
-        const newUser = req.body;
-        const query = { email: newUser?.email };
-        const existingUser = await userCollection.findOne(query);
-        if (existingUser) {
-          return res.send({ message: "User already exists", insertedId: null });
-        }
-
-        const result = await userCollection.insertOne(newUser);
-        console.log("user log in done", result);
-        if (result.insertedId) {
-          return res.send({
-            message: "User created successfully",
-            insertedId: result.insertedId,
-          });
-        } else {
-          throw new Error("Insertion failed");
-        }
-      } catch (error) {
-        console.error(error.message);
-      }
-    });
-
-    //
+    // save a user data in db
     app.put("/user", async (req, res) => {
       try {
         const user = req.body;
         const query = { email: user?.email };
-        // check if user already exists in data server
+        // check if user already exists in db
         const isExist = await userCollection.findOne(query);
-        if (isExist && user.status === "Pending") {
-          const result = await userCollection.updateOne(query, {
-            $set: { status: user?.status },
-          });
-          return res.send({ success: true, result });
-        } else if (isExist) {
-          return res.send({ success: true, data: isExist });
+        if (isExist) {
+          if (user.status === "Requested") {
+            // if existing user try to change his role
+            const result = await userCollection.updateOne(query, {
+              $set: { status: user?.status },
+            });
+            return res.send(result);
+          } else {
+            //if existing user errorin again
+            return res.send(isExist);
+          }
         }
 
         // save user for the first time
@@ -160,18 +158,59 @@ async function run() {
           updateDoc,
           options
         );
-        res.send({ success: true, result });
+        res.send(result);
       } catch (error) {
-        console.log(error.message);
+        console.error(error.message);
       }
     });
+
+    // save users data
+    app.post("/users", async (req, res) => {
+      try {
+        const newUser = {
+          name: req.body.name,
+          email: req.body.email,
+          role: "user",
+          status: "pending",
+        };
+        // const newUser = req.body;
+        // const query = { email: newUser?.email };
+        // Check if user exists
+        // console.error("Checking for existing user:", { email: newUser.email });
+        const existingUser = await userCollection.findOne({
+          email: newUser.email,
+        });
+
+        if (existingUser) {
+          return res.send({
+            message: "User already exists",
+          });
+        }
+
+        // Insert new user
+        const result = await userCollection.insertOne(newUser);
+        // console.error("user error in done", result);
+
+        if (result.insertedId) {
+          return res.send({
+            message: "User created successfully",
+            insertedId: result.insertedId,
+          });
+        } else {
+          throw new Error("Insertion failed");
+        }
+      } catch (error) {
+        console.error(error.message);
+      }
+    });
+
     //  get all users data
     app.get("/users", async (req, res) => {
       try {
         const result = await userCollection.find().toArray();
         res.send(result);
       } catch (error) {
-        console.log(error.message);
+        console.error(error.message);
       }
     });
 
@@ -182,42 +221,49 @@ async function run() {
         const result = await userCollection.findOne({ email });
         res.send(result);
       } catch (error) {
-        console.log(error.message);
+        console.error(error.message);
       }
     });
 
     // update a user role
 
-    app.patch("/users/update/:email", async (req, res) => {
-      try {
-        const email = req.params.email;
-        const user = req.body;
-        const query = { email };
-        const updateDoc = {
-          $set: {
-            ...user,
-            timestamp: Date.now(),
-          },
-        };
-        const result = await userCollection.updateOne(query, updateDoc);
-        res.send(result);
-      } catch (error) {
-        console.log(error.message);
+    app.patch(
+      "/users/update/:email",
+
+      async (req, res) => {
+        try {
+          const email = req.params.email;
+          const user = req.body;
+          const query = { email };
+          const updateDoc = {
+            $set: {
+              ...user,
+              timestamp: Date.now(),
+            },
+          };
+          const result = await userCollection.updateOne(query, updateDoc);
+          res.send(result);
+        } catch (error) {
+          console.error(error.message);
+        }
       }
-    });
+    );
 
     // delete user
-    app.delete("/users/delete/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const query = { _id: new ObjectId(id) };
-        const result = await userCollection.deleteOne(query);
-        res.send(result);
-      } catch (error) {
-        console.error("Error deleting user:", error.message);
-        console.log("Error deleting user:", error.message);
+    app.delete(
+      "/users/delete/:id",
+
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const result = await userCollection.deleteOne(query);
+          res.send(result);
+        } catch (error) {
+          console.error("Error deleting user:", error.message);
+        }
       }
-    });
+    );
 
     // Contest related API
 
@@ -227,7 +273,7 @@ async function run() {
         const result = await contestCollection.find().toArray();
         res.send(result);
       } catch (error) {
-        console.log(error.message);
+        console.error(error.message);
       }
     });
 
@@ -241,7 +287,7 @@ async function run() {
           .toArray();
         res.send(result);
       } catch (error) {
-        console.log(error.massager);
+        console.error(error.massager);
       }
     });
 
@@ -255,7 +301,7 @@ async function run() {
 
         res.send(result);
       } catch (error) {
-        console.log(error.massage);
+        console.error(error.massage);
         res.status(500).send({ message: "Failed to fetch contest id" });
       }
     });
@@ -312,7 +358,6 @@ async function run() {
         );
 
         res.send({ updateWinner, updateOthers });
-        console.log(updateWinner, updateOthers);
       } catch (error) {
         console.error(error.message);
         res.status(500).send({ message: "Failed to declare winner" });
@@ -341,7 +386,7 @@ async function run() {
         const result = await contestCollection.find(query).toArray();
         res.send(result);
       } catch (error) {
-        console.log(error.message);
+        console.error(error.message);
         res.status(500).send({ message: "Failed to fetch contest list email" });
       }
     });
@@ -360,7 +405,7 @@ async function run() {
         });
         res.send({ message: "Contest and related submissions deleted" });
       } catch (error) {
-        console.log(error.message);
+        console.error(error.message);
         res.status(500).send({ message: "Failed to fetch contest delete" });
       }
     });
@@ -374,7 +419,7 @@ async function run() {
         const result = await contestCollection.insertOne(contestData);
         res.send(result);
       } catch (error) {
-        console.log(error.message);
+        console.error(error.message);
       }
     });
 
@@ -394,7 +439,7 @@ async function run() {
 
           const result = await contestCollection.updateOne(query, updateDoc);
           res.send(result);
-          console.log("result", result);
+          console.error("result", result);
         } catch (error) {
           console.error(error.message);
         }
